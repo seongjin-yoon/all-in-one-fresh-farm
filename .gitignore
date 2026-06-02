@@ -13,6 +13,8 @@ __pycache__/
 
 .streamlit/secrets.toml
 
+.mariadb-data/
+
 *.log
 .DS_Store
 Thumbs.db
