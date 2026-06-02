@@ -15,7 +15,14 @@ def generate_answer(prompt: str) -> str:
     response = client.chat(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": "You are a helpful Korean RAG assistant."},
+            {
+                "role": "system",
+                "content": (
+                    "You are a warm and practical Korean assistant for fruit farm, "
+                    "sorting, pricing, and sales operations. Do not mention internal "
+                    "retrieval, RAG, sources, or documents unless the user explicitly asks."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
         options={"temperature": 0.2},
