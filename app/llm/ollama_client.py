@@ -14,6 +14,18 @@ client = ollama.Client(host=OLLAMA_BASE_URL)
 HANJA_OR_CHINESE_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]{2,}")
 HYPHENATED_ENGLISH_PATTERN = re.compile(r"[A-Za-z]+-[A-Za-z]+")
+ALLOWED_SHORT_ENGLISH_WORDS = {
+    "ai",
+    "api",
+    "db",
+    "erp",
+    "kg",
+    "llm",
+    "pos",
+    "rag",
+    "ui",
+    "wms",
+}
 
 
 def contains_hanja_or_chinese(text: str) -> bool:
@@ -21,11 +33,15 @@ def contains_hanja_or_chinese(text: str) -> bool:
 
 
 def contains_excessive_english(text: str) -> bool:
-    english_words = ENGLISH_WORD_PATTERN.findall(text)
+    english_words = [
+        word
+        for word in ENGLISH_WORD_PATTERN.findall(text)
+        if word.lower() not in ALLOWED_SHORT_ENGLISH_WORDS
+    ]
     if not english_words:
         return False
 
-    latin_chars = sum(1 for char in text if char.isascii() and char.isalpha())
+    latin_chars = sum(len(word) for word in english_words)
     non_space_chars = sum(1 for char in text if not char.isspace())
     latin_ratio = latin_chars / max(non_space_chars, 1)
 
@@ -40,7 +56,11 @@ def contains_disallowed_foreign_text(text: str) -> bool:
     return contains_hanja_or_chinese(text) or contains_excessive_english(text)
 
 
-def build_messages(prompt: str, history: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
+def build_messages(
+    prompt: str,
+    history: list[dict[str, str]] | None = None,
+    summary: str | None = None,
+) -> list[dict[str, str]]:
     messages = [
         {
             "role": "system",
@@ -52,6 +72,14 @@ def build_messages(prompt: str, history: list[dict[str, str]] | None = None) -> 
             ),
         }
     ]
+
+    if summary:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"이전 대화 요약입니다. 후속 질문의 맥락 이해에만 사용하세요.\n{summary}",
+            }
+        )
 
     for turn in (history or [])[-3:]:
         user_message = turn.get("user", "").strip()
@@ -65,10 +93,14 @@ def build_messages(prompt: str, history: list[dict[str, str]] | None = None) -> 
     return messages
 
 
-def generate_answer(prompt: str, history: list[dict[str, str]] | None = None) -> str:
+def generate_answer(
+    prompt: str,
+    history: list[dict[str, str]] | None = None,
+    summary: str | None = None,
+) -> str:
     response = client.chat(
         model=CHAT_MODEL,
-        messages=build_messages(prompt, history),
+        messages=build_messages(prompt, history, summary),
         options={"temperature": 0.2},
     )
     answer = response["message"]["content"]
@@ -106,3 +138,38 @@ AI, API, LLM, Streamlit 같은 짧고 자연스러운 기술 용어는 필요할
     if contains_disallowed_foreign_text(rewritten_answer):
         return "답변에 한국어가 아닌 표현이 섞여 다시 정리해야 합니다. 질문을 한 번만 더 보내주시면 한국어로만 답변드릴게요."
     return rewritten_answer
+
+
+def summarize_conversation(existing_summary: str, rows: list[dict]) -> str:
+    conversation = "\n".join(
+        f"{'사용자' if row['role'] == 'user' else '도우미'}: {row['content']}"
+        for row in rows
+    )
+    prompt = f"""
+기존 요약과 새 대화를 합쳐 1,200자 이내의 한국어 요약으로 갱신하세요.
+다음 질문을 이해하는 데 필요한 내용만 남기세요.
+사용자의 관심 품목, 의사결정 목적, 선호 조건, 미해결 질문을 중심으로 정리하세요.
+가격, 재고, 시세 숫자는 오래될 수 있으므로 꼭 필요한 경우만 짧게 포함하세요.
+새로운 사실을 만들지 마세요.
+
+# 기존 요약
+{existing_summary or "없음"}
+
+# 새 대화
+{conversation}
+
+# 갱신 요약
+""".strip()
+
+    response = client.chat(
+        model=CHAT_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "당신은 대화 내용을 한국어로 짧고 정확하게 요약하는 도우미입니다.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        options={"temperature": 0.1, "num_predict": 500},
+    )
+    return response["message"]["content"].strip()

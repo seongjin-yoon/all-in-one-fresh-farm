@@ -97,6 +97,8 @@ st.markdown(
 
 if "question" not in st.session_state:
     st.session_state.question = ""
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -131,7 +133,7 @@ if st.button("질문하기", type="primary", disabled=not question.strip()):
         try:
             response = requests.post(
                 CHAT_API_URL,
-                json={"question": question, "history": st.session_state.chat_history[-3:]},
+                json={"question": question, "session_id": st.session_state.session_id},
                 timeout=120,
             )
             response.raise_for_status()
@@ -139,6 +141,7 @@ if st.button("질문하기", type="primary", disabled=not question.strip()):
         except requests.RequestException as exc:
             st.error(f"API 호출 실패: {exc}")
         else:
+            st.session_state.session_id = data["session_id"]
             st.session_state.chat_history.append(
                 {"user": question, "assistant": data["answer"]}
             )
@@ -154,3 +157,6 @@ if st.button("질문하기", type="primary", disabled=not question.strip()):
                         f"(distance: {source['distance']:.4f})"
                     )
                     st.write(source["content"])
+
+if st.session_state.session_id:
+    st.caption(f"현재 대화 세션 #{st.session_state.session_id} | 오래된 대화는 MariaDB에 요약 저장됩니다.")
