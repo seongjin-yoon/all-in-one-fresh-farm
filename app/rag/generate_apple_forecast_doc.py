@@ -11,11 +11,13 @@ from chronos import ChronosPipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "fruits_data"
+CRAWLED_PRICE_PATH = DATA_DIR / "garak_apple_prices.csv"
 OUTPUT_PATH = PROJECT_ROOT / "rag_docs" / "apple_price_forecast_chronos_mini.md"
 
 MODEL_NAME = "amazon/chronos-t5-mini"
 PREDICTION_LENGTH = 30
 NUM_SAMPLES = 100
+FORECAST_GRADE = os.getenv("PRICE_FORECAST_GRADE", "상")
 
 
 def parse_price(value: str) -> int | None:
@@ -33,6 +35,30 @@ def parse_date(value: str) -> pd.Timestamp | None:
 
 
 def load_apple_price_series() -> pd.DataFrame:
+    if CRAWLED_PRICE_PATH.exists():
+        frame = pd.read_csv(CRAWLED_PRICE_PATH)
+        frame["date"] = pd.to_datetime(frame["date"])
+        if "price_per_kg" not in frame.columns:
+            raise ValueError(f"{CRAWLED_PRICE_PATH} must contain price_per_kg")
+
+        filtered = frame[
+            (frame["grade"] == FORECAST_GRADE)
+            & frame["price_per_kg"].notna()
+        ].copy()
+        if filtered.empty:
+            raise ValueError(f"No {FORECAST_GRADE} grade price rows found in {CRAWLED_PRICE_PATH}")
+
+        filtered["price"] = filtered["price_per_kg"].round().astype(int)
+        filtered["source"] = CRAWLED_PRICE_PATH.name
+        return (
+            filtered[["date", "price", "source"]]
+            .groupby("date", as_index=False)
+            .agg({"price": "mean", "source": "first"})
+            .assign(price=lambda data: data["price"].round().astype(int))
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
     rows: list[dict] = []
     for path in sorted(DATA_DIR.glob("*.xls")):
         soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
@@ -129,12 +155,12 @@ def write_markdown(history: pd.DataFrame, forecast: pd.DataFrame) -> None:
 
 ## 데이터 개요
 - 품목: 사과
-- 세부 기준: 후지, 상품, 10개 기준 소매가격
-- 원천 파일 위치: `fruits_data/*.xls`
+- 세부 기준: 가락시장 사과, {FORECAST_GRADE} 등급, kg당 환산 가격
+- 원천 파일 위치: `fruits_data/garak_apple_prices.csv` 우선 사용, 없으면 `fruits_data/*.xls`
 - 관측 기간: {history['date'].min().strftime('%Y-%m-%d')} ~ {history['date'].max().strftime('%Y-%m-%d')}
 - 관측치 수: {len(history):,}개
-- 최신 관측 가격: {latest_price:,}원
-- 최근 20개 관측 평균: {recent_20_mean:,}원
+- 최신 관측 가격: {latest_price:,}원/kg
+- 최근 20개 관측 평균: {recent_20_mean:,}원/kg
 
 ## 예측 설정
 - 예측 모델: Chronos mini (`{MODEL_NAME}`)
@@ -144,13 +170,13 @@ def write_markdown(history: pd.DataFrame, forecast: pd.DataFrame) -> None:
 - 주의: 이 예측은 과거 소매가격 흐름만 사용한 시계열 예측이며, 날씨, 작황, 명절 수요, 산지 출하량, 도매시장 수급, 재고 정보는 직접 반영하지 않았다.
 
 ## 예측 요약
-- 30영업일 중앙값 평균: {forecast_mean:,}원
-- 예측 참고 범위: {low_forecast:,}원 ~ {high_forecast:,}원
+- 30영업일 중앙값 평균: {forecast_mean:,}원/kg
+- 예측 참고 범위: {low_forecast:,}원/kg ~ {high_forecast:,}원/kg
 - 전체 흐름 판단: {label}
 - 판매 판단에 사용할 때는 최신 실제 시세, 재고량, 납품처 주문량과 함께 확인하는 것이 좋다.
 
 ## 30영업일 예측표
-| 예측일 | 중앙값 예상가 | 낮은 경우 p10 | 높은 경우 p90 | 최신가 대비 |
+| 예측일 | 중앙값 예상가(원/kg) | 낮은 경우 p10 | 높은 경우 p90 | 최신가 대비 |
 |---|---:|---:|---:|---:|
 {rows}
 
@@ -158,7 +184,7 @@ def write_markdown(history: pd.DataFrame, forecast: pd.DataFrame) -> None:
 - 사용자가 사과 시세 전망을 물으면 중앙값 예상가를 우선 안내한다.
 - 사용자가 판매 시점을 물으면 예측 흐름뿐 아니라 재고 상태, 납품 일정, 품질 저하 가능성을 함께 고려해 답한다.
 - 예측값은 확정 가격이 아니라 의사결정을 돕는 참고값으로 설명한다.
-- kg당 가격 질문에는 이 문서의 단위가 10개 기준 소매가격임을 먼저 밝히고, kg당 환산에는 별도 중량 기준이 필요하다고 안내한다.
+- kg당 가격 질문에는 이 문서의 kg당 환산 가격을 우선 사용한다.
 """
     OUTPUT_PATH.write_text(content, encoding="utf-8")
 

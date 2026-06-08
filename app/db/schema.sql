@@ -31,3 +31,84 @@ CREATE TABLE IF NOT EXISTS chat_messages (
         REFERENCES chat_sessions(id)
         ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS sales_drafts (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_name VARCHAR(128) NOT NULL,
+    size_class VARCHAR(32) NOT NULL DEFAULT '대',
+    grade VARCHAR(32) NOT NULL,
+    quantity_kg INT NOT NULL,
+    estimated_unit_weight_kg DECIMAL(6, 3) NOT NULL DEFAULT 0.320,
+    price_per_kg INT NOT NULL,
+    package_unit VARCHAR(64) NOT NULL,
+    sales_channel VARCHAR(64) NOT NULL,
+    description TEXT NOT NULL,
+    status ENUM('draft', 'approved', 'registered', 'cancelled') NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sales_listings (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    draft_id BIGINT NOT NULL,
+    product_name VARCHAR(128) NOT NULL,
+    size_class VARCHAR(32) NOT NULL DEFAULT '대',
+    grade VARCHAR(32) NOT NULL,
+    quantity_kg INT NOT NULL,
+    original_quantity_kg INT NOT NULL,
+    estimated_unit_weight_kg DECIMAL(6, 3) NOT NULL DEFAULT 0.320,
+    price_per_kg INT NOT NULL,
+    package_unit VARCHAR(64) NOT NULL,
+    sales_channel VARCHAR(64) NOT NULL,
+    description TEXT NOT NULL,
+    status ENUM('active', 'sold_out', 'closed') NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sales_listings_draft
+        FOREIGN KEY (draft_id)
+        REFERENCES sales_drafts(id)
+);
+
+ALTER TABLE sales_listings
+    ADD COLUMN IF NOT EXISTS original_quantity_kg INT NULL AFTER quantity_kg;
+
+ALTER TABLE sales_drafts
+    ADD COLUMN IF NOT EXISTS size_class VARCHAR(32) NOT NULL DEFAULT '대' AFTER product_name,
+    ADD COLUMN IF NOT EXISTS estimated_unit_weight_kg DECIMAL(6, 3) NOT NULL DEFAULT 0.320 AFTER quantity_kg;
+
+ALTER TABLE sales_listings
+    ADD COLUMN IF NOT EXISTS size_class VARCHAR(32) NOT NULL DEFAULT '대' AFTER product_name,
+    ADD COLUMN IF NOT EXISTS estimated_unit_weight_kg DECIMAL(6, 3) NOT NULL DEFAULT 0.320 AFTER original_quantity_kg;
+
+CREATE TABLE IF NOT EXISTS sales_orders (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    listing_id BIGINT NOT NULL,
+    customer_name VARCHAR(80) NOT NULL,
+    quantity_kg INT NOT NULL,
+    total_amount INT NOT NULL,
+    status ENUM('ordered', 'confirmed', 'cancelled') NOT NULL DEFAULT 'ordered',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sales_orders_listing
+        FOREIGN KEY (listing_id)
+        REFERENCES sales_listings(id)
+);
+
+UPDATE sales_listings AS listing
+SET original_quantity_kg = quantity_kg + COALESCE((
+    SELECT SUM(sales_orders.quantity_kg)
+    FROM sales_orders
+    WHERE sales_orders.listing_id = listing.id
+      AND sales_orders.status <> 'cancelled'
+), 0)
+WHERE original_quantity_kg IS NULL;
+
+ALTER TABLE sales_listings
+    MODIFY original_quantity_kg INT NOT NULL;
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    event_type VARCHAR(64) NOT NULL,
+    title VARCHAR(160) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
