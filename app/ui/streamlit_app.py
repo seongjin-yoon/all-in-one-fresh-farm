@@ -283,6 +283,35 @@ def set_session_value(key: str, value: str) -> None:
     st.session_state[key] = value
 
 
+def require_login() -> dict:
+    if "admin_user" in st.session_state:
+        return st.session_state.admin_user
+
+    st.markdown('<div class="title">Manage Apple</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">관리자 계정으로 로그인하세요.</div>', unsafe_allow_html=True)
+    with st.form("admin_login_form"):
+        username = st.text_input("아이디", value=os.getenv("APP_ADMIN_USERNAME", "admin"))
+        password = st.text_input("비밀번호", type="password")
+        submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+
+    if submitted:
+        try:
+            user = api_post("/auth/login", {"username": username, "password": password})
+        except requests.RequestException:
+            st.error("로그인 실패: 아이디와 비밀번호를 확인하세요.")
+        else:
+            if user["role"] != "admin":
+                st.error("관리자 계정만 접근할 수 있습니다.")
+            else:
+                st.session_state.admin_user = user
+                st.rerun()
+
+    st.stop()
+
+
+admin_user = require_login()
+
+
 with st.sidebar:
     st.markdown(
         """
@@ -293,6 +322,10 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+    st.caption(f"{admin_user['display_name']}님 로그인")
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state.pop("admin_user", None)
+        st.rerun()
     nav_items = [
         ("대시보드", "▣  대시보드"),
         ("챗봇", "◌  챗봇"),

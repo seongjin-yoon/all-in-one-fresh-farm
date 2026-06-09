@@ -457,7 +457,12 @@ def list_listings() -> list[dict]:
         return list(cursor.fetchall())
 
 
-def place_order(listing_id: int, customer_name: str, quantity_kg: int) -> dict:
+def place_order(
+    listing_id: int,
+    customer_name: str,
+    quantity_kg: int,
+    customer_user_id: int | None = None,
+) -> dict:
     with db_cursor() as cursor:
         cursor.execute(
             "SELECT * FROM sales_listings WHERE id = ? FOR UPDATE",
@@ -477,10 +482,12 @@ def place_order(listing_id: int, customer_name: str, quantity_kg: int) -> dict:
 
         cursor.execute(
             """
-            INSERT INTO sales_orders (listing_id, customer_name, quantity_kg, total_amount)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO sales_orders (
+                listing_id, customer_user_id, customer_name, quantity_kg, total_amount
+            )
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (listing_id, customer_name, quantity_kg, total_amount),
+            (listing_id, customer_user_id, customer_name, quantity_kg, total_amount),
         )
         order_id = int(cursor.lastrowid)
         cursor.execute(
@@ -522,6 +529,59 @@ def list_orders() -> list[dict]:
     with db_cursor() as cursor:
         cursor.execute("SELECT * FROM sales_orders ORDER BY id DESC")
         return list(cursor.fetchall())
+
+
+def list_user_orders(customer_user_id: int) -> list[dict]:
+    with db_cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                sales_orders.*,
+                sales_listings.product_name,
+                sales_listings.size_class,
+                sales_listings.grade,
+                sales_listings.package_unit,
+                sales_listings.price_per_kg
+            FROM sales_orders
+            JOIN sales_listings
+              ON sales_orders.listing_id = sales_listings.id
+            WHERE sales_orders.customer_user_id = ?
+            ORDER BY sales_orders.id DESC
+            """,
+            (customer_user_id,),
+        )
+        return list(cursor.fetchall())
+
+
+def ensure_demo_purchase_history(customer_user_id: int, customer_name: str) -> None:
+    with db_cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) AS count FROM sales_orders WHERE customer_user_id = ?",
+            (customer_user_id,),
+        )
+        if int(cursor.fetchone()["count"]) > 0:
+            return
+
+    listings = [
+        listing
+        for listing in list_listings()
+        if listing["status"] == "active" and int(listing["quantity_kg"]) >= 5
+    ]
+    if not listings:
+        return
+
+    demo_quantities = [5, 10, 5]
+    for index, quantity_kg in enumerate(demo_quantities):
+        listing = listings[index % len(listings)]
+        unit = 5 if "5kg" in listing["package_unit"] else 10
+        quantity = max(unit, quantity_kg)
+        if quantity <= int(get_listing(int(listing["id"]))["quantity_kg"]):
+            place_order(
+                int(listing["id"]),
+                customer_name,
+                quantity,
+                customer_user_id=customer_user_id,
+            )
 
 
 def list_notifications(limit: int = 20) -> list[dict]:

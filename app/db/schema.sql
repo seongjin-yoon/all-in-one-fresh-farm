@@ -32,6 +32,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
         ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(80) NOT NULL UNIQUE,
+    display_name VARCHAR(120) NOT NULL,
+    role ENUM('admin', 'customer') NOT NULL DEFAULT 'customer',
+    password_salt VARCHAR(64) NOT NULL,
+    password_hash VARCHAR(128) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS sales_drafts (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     product_name VARCHAR(128) NOT NULL,
@@ -82,6 +94,7 @@ ALTER TABLE sales_listings
 CREATE TABLE IF NOT EXISTS sales_orders (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     listing_id BIGINT NOT NULL,
+    customer_user_id BIGINT NULL,
     customer_name VARCHAR(80) NOT NULL,
     quantity_kg INT NOT NULL,
     total_amount INT NOT NULL,
@@ -91,6 +104,12 @@ CREATE TABLE IF NOT EXISTS sales_orders (
         FOREIGN KEY (listing_id)
         REFERENCES sales_listings(id)
 );
+
+ALTER TABLE sales_orders
+    ADD COLUMN IF NOT EXISTS customer_user_id BIGINT NULL AFTER listing_id;
+
+ALTER TABLE sales_orders
+    ADD INDEX IF NOT EXISTS idx_sales_orders_customer_user_id (customer_user_id);
 
 UPDATE sales_listings AS listing
 SET original_quantity_kg = quantity_kg + COALESCE((
