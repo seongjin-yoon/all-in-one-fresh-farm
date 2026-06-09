@@ -15,39 +15,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PRICE_DATA_PATH = PROJECT_ROOT / "fruits_data" / "garak_apple_prices.csv"
 FORECAST_DOC_PATH = PROJECT_ROOT / "rag_docs" / "apple_price_forecast_chronos_mini.md"
 
-st.set_page_config(page_title="Fruits Ninja Admin", page_icon="apple", layout="wide")
+st.set_page_config(page_title="Manage Apple Admin", page_icon="apple", layout="wide")
 
 st.markdown(
     """
     <style>
     .stApp { background: #f8faf7; color: #17231d; }
-    .block-container { max-width: 1360px; padding-top: .65rem; padding-bottom: 3rem; }
+    .block-container { max-width: 1360px; padding-top: 2rem; padding-bottom: 3rem; }
     section[data-testid="stSidebar"] {
         background: #fffdf8;
         border-right: 1px solid rgba(23,35,29,.12);
         box-shadow: 8px 0 24px rgba(23,35,29,.035);
     }
-    .topbar {
-        background: rgba(255,255,255,.92);
-        border: 1px solid rgba(23,35,29,.12);
-        border-radius: 8px;
-        padding: .7rem .95rem;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
+    section[data-testid="stSidebar"] > div:first-child {
+        padding-top: 1.25rem;
     }
-    .brand { display: flex; align-items: center; gap: .75rem; }
-    .brand-mark {
-        width: 38px; height: 38px; border-radius: 8px;
-        background: linear-gradient(145deg, #f03d35, #c81f26);
-        color: #fff; display:flex; align-items:center; justify-content:center;
-        font-size: 1.3rem; font-weight: 900;
-    }
-    .brand-title { font-size: 1.08rem; font-weight: 950; color: #15231c; line-height: 1.15; }
-    .brand-sub { font-size: .76rem; color: #69746d; margin-top: .1rem; }
-    .top-actions { color:#405047; font-weight:800; font-size:.86rem; }
     .hero {
         padding: .8rem 0 .65rem;
         margin-bottom: .7rem;
@@ -296,11 +278,16 @@ if "toast_notifications_ready" not in st.session_state:
 if "admin_page" not in st.session_state:
     st.session_state.admin_page = "대시보드"
 
+
+def set_session_value(key: str, value: str) -> None:
+    st.session_state[key] = value
+
+
 with st.sidebar:
     st.markdown(
         """
         <div class="side-brand">
-          <div class="side-logo">프루츠닌자</div>
+          <div class="side-logo">Manage Apple</div>
           <div class="side-sub">AI 과일 자동화 시스템</div>
         </div>
         """,
@@ -342,19 +329,9 @@ with st.sidebar:
 
 st.markdown(
     """
-    <div class="topbar">
-      <div class="brand">
-        <div class="brand-mark">F</div>
-        <div>
-          <div class="brand-title">프루츠닌자</div>
-          <div class="brand-sub">AI 과일 자동화 시스템</div>
-        </div>
-      </div>
-      <div class="top-actions">관리자 · 실시간 운영</div>
-    </div>
     <div class="hero">
       <div class="kicker">LOCAL LLM · ROBOT HARVEST · SALES OPS</div>
-      <div class="title">과일 자동화 대시보드</div>
+      <div class="title">Manage Apple</div>
       <div class="subtitle">로봇 수확 이벤트, 사과 재고, 쇼핑몰 등록, 주문 알림, 시세예측 RAG 갱신을 한 화면에서 관리합니다.</div>
     </div>
     """,
@@ -427,12 +404,18 @@ if selected_page == "대시보드":
                     st.session_state.chat_history = st.session_state.chat_history[-3:]
                     st.session_state.last_answer = data["answer"]
                     st.session_state.last_sources = data.get("sources", [])
-        if dash_btn_b.button("중과 하 재고", use_container_width=True):
-            st.session_state.dashboard_question = "중과 하 재고 알려줘"
-            st.rerun()
-        if dash_btn_c.button("시세 전망", use_container_width=True):
-            st.session_state.dashboard_question = "1달 내에 가장 팔기 좋은 날이 언제야?"
-            st.rerun()
+        dash_btn_b.button(
+            "중과 하 재고",
+            use_container_width=True,
+            on_click=set_session_value,
+            args=("dashboard_question", "중과 하 재고 알려줘"),
+        )
+        dash_btn_c.button(
+            "시세 전망",
+            use_container_width=True,
+            on_click=set_session_value,
+            args=("dashboard_question", "1달 내에 가장 팔기 좋은 날이 언제야?"),
+        )
 
         if st.session_state.last_answer:
             safe_answer = html.escape(st.session_state.last_answer).replace("\n", "<br>")

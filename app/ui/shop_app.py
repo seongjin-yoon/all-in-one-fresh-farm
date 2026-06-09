@@ -13,26 +13,23 @@ CHAT_API_URL = os.getenv("CHAT_API_URL", "http://localhost:8000/chat")
 API_BASE_URL = CHAT_API_URL.rsplit("/", 1)[0]
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 APPLE_IMAGE_PATH = ASSET_DIR / "apple-hero.png"
+PROMO_IMAGE_PATH = ASSET_DIR / "apple-market-banner.png"
+PRODUCT_IMAGE_PATHS = {
+    ("대", "상"): ASSET_DIR / "apple-large-premium.png",
+    ("대", "중"): ASSET_DIR / "apple-large-standard.png",
+    ("대", "하"): ASSET_DIR / "apple-large-value.png",
+    ("중", "상"): ASSET_DIR / "apple-medium-premium.png",
+    ("중", "중"): ASSET_DIR / "apple-medium-standard.png",
+    ("중", "하"): ASSET_DIR / "apple-medium-value.png",
+}
 
-st.set_page_config(page_title="Fruits Ninja Market", page_icon="apple", layout="wide")
+st.set_page_config(page_title="Apple Market", page_icon="apple", layout="wide")
 
 st.markdown(
     """
     <style>
     .stApp { background: #fbfaf4; color: #17231d; }
-    .block-container { max-width: 1180px; padding-top: 1.1rem; padding-bottom: 3rem; }
-    .market-nav {
-        background: rgba(255,255,255,.94);
-        border: 1px solid rgba(23,35,29,.12);
-        border-radius: 8px;
-        padding: .72rem .95rem;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        margin-bottom: .9rem;
-    }
-    .nav-brand { font-size:1.25rem; font-weight:950; color:#17231d; }
-    .nav-links { color:#33443a; font-size:.86rem; font-weight:850; }
+    .block-container { max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem; }
     .market-header {
         padding: 1.2rem 1.25rem;
         border: 1px solid rgba(23,35,29,.10);
@@ -48,15 +45,37 @@ st.markdown(
     .kicker { color: #657261; font-size: .82rem; font-weight: 850; }
     .title { color: #17231d; font-size: 2.35rem; line-height: 1.1; font-weight: 900; margin: .15rem 0 .35rem; }
     .subtitle { color: #5e6961; line-height: 1.55; max-width: 720px; }
-    .summary-card, .product-card {
+    .promo-banner, .product-card {
         background: #fffefa;
         border: 1px solid rgba(23,35,29,.13);
         border-radius: 8px;
         padding: 1rem;
         box-shadow: 0 8px 20px rgba(23,35,29,.045);
     }
-    .summary-label { color: #6e796f; font-size: .78rem; font-weight: 850; }
-    .summary-value { color: #17231d; font-size: 1.45rem; font-weight: 900; }
+    .promo-banner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin: .2rem 0 1rem;
+        padding: 1rem 1.2rem;
+        background: linear-gradient(100deg, #fff8ed 0%, #eef7ea 100%);
+    }
+    .promo-title { color: #17231d; font-size: 1.34rem; font-weight: 950; margin-bottom: .2rem; }
+    .promo-copy { color: #5e6961; line-height: 1.5; font-size: .95rem; }
+    .promo-image {
+        flex: 0 0 auto;
+        width: 220px;
+        height: 110px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid rgba(23,35,29,.08);
+        box-shadow: 0 8px 18px rgba(23,35,29,.08);
+    }
+    @media (max-width: 760px) {
+        .promo-banner { align-items: flex-start; flex-direction: column; }
+        .promo-image { width: 100%; height: 150px; }
+    }
     .hero-image {
         width: 260px;
         max-height: 118px;
@@ -139,29 +158,12 @@ def image_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
-def render_summary(label: str, value: str) -> None:
-    st.markdown(
-        f"""
-        <div class="summary-card">
-          <div class="summary-label">{html.escape(label)}</div>
-          <div class="summary-value">{html.escape(value)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 apple_image_uri = image_data_uri(APPLE_IMAGE_PATH)
-
-st.markdown(
-    """
-    <div class="market-nav">
-      <div class="nav-brand">프루츠닌자 마켓</div>
-      <div class="nav-links">상품&nbsp;&nbsp;&nbsp;주문내역&nbsp;&nbsp;&nbsp;공지사항&nbsp;&nbsp;&nbsp;고객센터&nbsp;&nbsp;&nbsp;장바구니</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+promo_banner_uri = image_data_uri(PROMO_IMAGE_PATH)
+product_image_uris = {
+    key: image_data_uri(path)
+    for key, path in PRODUCT_IMAGE_PATHS.items()
+}
 
 hero_image = f'<img class="hero-image" src="{apple_image_uri}" />' if apple_image_uri else ""
 st.markdown(
@@ -169,7 +171,7 @@ st.markdown(
     <div class="market-header">
       <div>
         <div class="kicker">FRESH LOCAL APPLES</div>
-        <div class="title">상철 사과 마켓</div>
+        <div class="title">Apple Market</div>
         <div class="subtitle">신선한 사과를 합리적인 가격에 만나보세요.</div>
       </div>
       {hero_image}
@@ -185,6 +187,20 @@ except requests.RequestException as exc:
 
 if "shop_size_filter" not in st.session_state:
     st.session_state.shop_size_filter = "전체"
+
+promo_image = f'<img class="promo-image" src="{promo_banner_uri}" />' if promo_banner_uri else ""
+st.markdown(
+    f"""
+    <div class="promo-banner">
+      <div>
+        <div class="promo-title">오늘 수확한 신선한 사과를 바로 만나보세요</div>
+        <div class="promo-copy">대과는 선물용으로, 중과는 매일 먹기 좋은 실속형으로 준비했습니다.</div>
+      </div>
+      {promo_image}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 filter_cols = st.columns([0.75, 0.75, 0.75, 2.7, 1])
 for col, filter_name in zip(filter_cols[:3], ["전체", "대과", "중과"]):
@@ -208,16 +224,6 @@ listings = [
     for listing in all_listings
     if selected_size is None or listing["size_class"] == selected_size
 ]
-total_quantity = sum(int(listing["quantity_kg"]) for listing in listings)
-total_value = sum(int(listing["quantity_kg"]) * int(listing["price_per_kg"]) for listing in listings)
-
-summary_cols = st.columns(3)
-with summary_cols[0]:
-    render_summary("판매 중인 상품", f"{len(listings)}개")
-with summary_cols[1]:
-    render_summary("남은 판매수량", f"{total_quantity:,}kg")
-with summary_cols[2]:
-    render_summary("등록 금액", f"{total_value:,}원")
 
 st.markdown(
     f"""
@@ -240,10 +246,14 @@ for row_start in range(0, len(listings), 3):
             total_amount = int(listing["quantity_kg"]) * int(listing["price_per_kg"])
             unit = 5 if "5kg" in listing["package_unit"] else 10
             max_order = min(int(listing["quantity_kg"]), unit * 20)
+            product_image_uri = product_image_uris.get(
+                (listing["size_class"], listing["grade"]),
+                apple_image_uri,
+            )
             st.markdown(
                 f"""
                 <div class="product-card">
-                  {f'<img class="product-image" src="{apple_image_uri}" />' if apple_image_uri else ''}
+                  {f'<img class="product-image" src="{product_image_uri}" />' if product_image_uri else ''}
                   <div class="product-body">
                     <span class="pill">{listing['size_class']}과 · {listing['grade']} 등급</span>
                     <div class="product-title">{html.escape(item_name(listing))}</div>
