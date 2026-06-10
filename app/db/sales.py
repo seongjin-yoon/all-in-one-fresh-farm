@@ -576,14 +576,6 @@ def record_harvest_event(
 
     current_base_available_kg = decimal_to_float(inventory["available_kg"])
     current_available_kg = get_available_kg(product_name, size_class, grade)
-    create_notification(
-        "harvest_recorded",
-        "로봇 수확 재고 반영",
-        (
-            f"{product_name} {size_class}과 {grade} 등급 1개가 수확 재고에 반영되었습니다. "
-            f"추가 중량: {estimated_weight_kg:.2f}kg"
-        ),
-    )
     return {
         "id": event_id,
         "product_name": product_name,
@@ -901,6 +893,7 @@ def list_notifications(limit: int = 20) -> list[dict]:
             """
             SELECT *
             FROM notifications
+            WHERE event_type <> 'harvest_recorded'
             ORDER BY id DESC
             LIMIT ?
             """,
