@@ -1,0 +1,314 @@
+코드 리뷰 - 로봇 수확 연동 및 판매페이지 관리 업데이트
+작성일: 2026-06-10
+
+검토 범위
+- 터틀봇 수확 결과 수신 API
+- DB 기반 사과 재고 관리
+- 수확 이벤트 기록
+- 관리자 화면의 판매페이지 제목 관리 기능
+- 무료 버전 우측 광고 UI
+- 판매페이지 상품목록 버튼 줄바꿈 수정
+
+1. app/api/robot.py
+
+새로 추가된 기능
+- POST /robot/harvest 엔드포인트가 추가되었습니다.
+- 터틀봇 또는 로봇 제어 코드에서 수확 결과를 JSON으로 보낼 수 있습니다.
+
+요청 JSON 예시
+{
+  "size_class": "대",
+  "quality_grade": "상"
+}
+
+선택적으로 보낼 수 있는 값
+{
+  "product_name": "사과"
+}
+
+동작 방식
+- 요청을 받으면 app.db.sales.record_harvest_event()를 호출합니다.
+- product_name이 없으면 기본값으로 "사과"를 사용합니다.
+- size_class와 quality_grade를 기준으로 고정 중량을 적용합니다.
+- 수확 이벤트를 DB에 저장하고, 해당 재고를 증가시킵니다.
+
+응답값
+- 수확 이벤트 ID
+- 상품명
+- 크기 등급
+- 품질 등급
+- 추가 반영 중량
+- 현재 기준 재고
+- 현재 판매 등록 가능 재고
+
+리뷰 의견
+- MVP 구조로 적절합니다.
+- 터틀봇은 복잡한 정보를 보낼 필요 없이 크기와 품질만 보내면 됩니다.
+- 실제 중량은 서버에서 일괄 적용하므로 로봇 쪽 코드가 단순해집니다.
+- 나중에 로봇이 여러 대가 되거나 네트워크 재전송 문제가 생기면 robot_id, event_id를 추가하면 됩니다.
+
+2. app/main.py
+
+변경 내용
+- app.api.robot 라우터가 FastAPI 앱에 등록되었습니다.
+
+효과
+- 무료 로컬 API와 프로 Docker API 모두 /robot/harvest를 사용할 수 있습니다.
+
+프로 버전에서 터틀봇이 보낼 주소
+POST http://10.10.16.17:8000/robot/harvest
+
+무료 로컬 버전에서 테스트할 주소
+POST http://10.10.16.17:8001/robot/harvest
+
+리뷰 의견
+- 라우터 분리는 적절합니다.
+- 로봇 관련 API가 sales API에 섞이지 않아 구조가 더 명확합니다.
+
+3. app/db/schema.sql
+
+새로 추가된 테이블: apple_inventory
+
+역할
+- 현재 사과 재고를 크기/품질별로 저장합니다.
+
+주요 컬럼
+- product_name
+- size_class
+- grade
+- available_kg
+- reserved_kg
+- package_unit
+- sales_channel
+- created_at
+- updated_at
+
+특징
+- product_name, size_class, grade 조합에 UNIQUE KEY가 걸려 있습니다.
+- 같은 사과/크기/품질 조합이 중복으로 생기지 않습니다.
+
+새로 추가된 테이블: harvest_events
+
+역할
+- 로봇이 수확했다고 보낸 이벤트를 건별로 기록합니다.
+
+주요 컬럼
+- product_name
+- size_class
+- quality_grade
+- estimated_weight_kg
+- created_at
+
+특징
+- created_at은 DB가 자동으로 저장합니다.
+- 터틀봇이 시간을 보내지 않아도 수확 기록 시간이 남습니다.
+
+새로 추가된 테이블: app_settings
+
+역할
+- 판매페이지 제목 같은 설정값을 DB에 저장합니다.
+
+리뷰 의견
+- 현재 재고와 수확 이력을 분리한 점이 좋습니다.
+- 재고는 현재 상태이고, harvest_events는 이력입니다.
+- 더미데이터는 apple_inventory 초기값으로만 사용되고, 이후 변화는 DB에 쌓입니다.
+
+4. app/db/sales.py
+
+새로 추가된 함수
+
+decimal_to_float(value)
+- MariaDB DECIMAL 값을 Python float로 변환합니다.
+- 소수점 3자리 기준으로 정리합니다.
+- 0.32kg, 0.24kg 같은 로봇 수확 중량을 표시하기 위해 필요합니다.
+
+get_sample_product(product_name, size_class, grade)
+- 기존 SAMPLE_PRODUCTS에서 상품 메타데이터를 가져옵니다.
+- package_unit, sales_channel, fallback price 같은 값을 보완하는 역할입니다.
+
+ensure_inventory_tables()
+- apple_inventory, harvest_events 테이블이 없으면 생성합니다.
+- 기존 더미 재고 데이터를 apple_inventory에 INSERT IGNORE 방식으로 넣습니다.
+- 이미 있는 재고는 덮어쓰지 않습니다.
+
+list_inventory_products()
+- DB의 apple_inventory를 읽어옵니다.
+- SAMPLE_PRODUCTS의 메타데이터와 합쳐서 기존 판매 로직이 계속 사용할 수 있게 합니다.
+
+record_harvest_event(size_class, quality_grade, product_name="사과")
+- 로봇 수확 연동의 핵심 함수입니다.
+- size_class와 quality_grade를 검증합니다.
+- 대과는 0.32kg, 중과는 0.24kg을 적용합니다.
+- harvest_events에 이벤트를 저장합니다.
+- apple_inventory의 해당 재고를 증가시킵니다.
+- 수확 반영 알림도 생성합니다.
+
+변경된 함수
+
+get_product_template()
+- 기존에는 SAMPLE_PRODUCTS만 사용했습니다.
+- 이제는 DB의 apple_inventory를 먼저 읽고, 부족한 메타데이터는 SAMPLE_PRODUCTS에서 보완합니다.
+
+get_available_kg()
+- 정수 kg만 다루던 방식에서 소수 kg도 다룰 수 있게 바뀌었습니다.
+
+list_products()
+- 재고 원천이 SAMPLE_PRODUCTS에서 apple_inventory DB 테이블로 변경되었습니다.
+- 대시보드, 판매상품등록, 챗봇 재고 조회가 DB 재고를 보게 됩니다.
+
+리뷰 의견
+- 이번 변경의 핵심입니다.
+- 이제 재고가 코드 상수가 아니라 DB 상태로 관리됩니다.
+- 로봇 수확 이벤트가 들어오면 대시보드와 판매등록 가능 재고에 반영됩니다.
+- 다만 아직 상품 메타데이터 일부는 SAMPLE_PRODUCTS에 남아 있습니다.
+- 추후에는 package_unit, sales_channel, 기본 가격도 DB 테이블로 옮기면 더 깔끔합니다.
+
+5. app/api/sales.py
+
+변경 내용
+- ProductInventory의 kg 필드 타입이 int에서 float로 바뀌었습니다.
+
+변경된 필드
+- base_available_kg
+- available_kg
+- reserved_kg
+
+이유
+- 로봇 수확 1개당 0.32kg 또는 0.24kg 단위로 재고가 늘어나기 때문입니다.
+- int로 두면 수확된 소수 kg가 화면과 API에서 사라질 수 있습니다.
+
+새로 추가된 모델
+- ShopSettings
+- ShopSettingsRequest
+
+새로 추가된 API
+- GET /sales/settings/shop
+- PUT /sales/settings/shop
+
+역할
+- 판매페이지 제목을 DB에서 읽고 수정할 수 있게 합니다.
+
+리뷰 의견
+- 설정값을 .env가 아니라 DB로 옮긴 방향은 좋습니다.
+- 운영 중에도 관리자 화면에서 제목을 바꿀 수 있습니다.
+
+6. app/ui/streamlit_app.py
+
+변경 내용
+- 관리자 사이드바에 판매페이지 관리 탭이 추가되었습니다.
+- 판매페이지 제목을 입력하고 저장할 수 있습니다.
+- 저장된 제목은 /sales/settings/shop API를 통해 DB에 반영됩니다.
+- 재고 표시가 소수 kg를 지원하도록 format_kg()가 추가되었습니다.
+- 무료 버전 광고가 왼쪽 사이드바에서 오른쪽 광고 레일로 이동했습니다.
+- 광고 이미지 2개가 위아래로 표시됩니다.
+- 사이드바 탭 클릭 후 바로 활성 상태가 바뀌도록 st.rerun()이 추가되었습니다.
+
+리뷰 의견
+- 관리자 사용 흐름이 좋아졌습니다.
+- 판매페이지 제목 변경을 위해 코드나 .env를 수정하지 않아도 됩니다.
+- 로봇 수확으로 620.32kg처럼 소수 재고가 생겨도 화면에서 확인할 수 있습니다.
+- 무료 버전 광고는 프로 버전에 영향을 주지 않도록 분기되어 있습니다.
+
+7. app/ui/shop_app.py
+
+변경 내용
+- 판매페이지 제목을 /sales/settings/shop API에서 읽습니다.
+- API가 실패하면 기존 .env 기본 제목을 사용합니다.
+- 상품목록/구매기록 버튼과 필터 버튼의 줄바꿈을 막기 위해 CSS white-space: nowrap이 추가되었습니다.
+- 버튼 컬럼 폭이 조정되었습니다.
+- 무료 버전 우측 광고 레일에 이미지 2개가 세로로 표시됩니다.
+
+리뷰 의견
+- 판매페이지 제목의 원천이 DB로 통합되었습니다.
+- 상품목록 버튼 줄바꿈 현상이 완화되었습니다.
+- 광고 영역 때문에 본문 폭이 줄어드는 상황을 고려해 버튼 폭과 nowrap 처리를 같이 한 점이 좋습니다.
+
+8. app/ui/assets
+
+새로 추가된 파일
+- ai-campus-onsite-ad.png
+- ai-campus-semiconductor-ad.png
+
+역할
+- 무료 버전 관리자/쇼핑몰 우측 광고 영역에 표시됩니다.
+
+리뷰 의견
+- 무료 버전에만 표시되며, 프로 버전에는 영향을 주지 않습니다.
+
+9. 실제 테스트 결과
+
+확인한 항목
+- Python 문법 검사 통과
+- 무료 로컬 API 정상
+  http://127.0.0.1:8001/health -> 200
+- 무료 관리자 페이지 정상
+  http://127.0.0.1:8501 -> 200
+- 무료 쇼핑몰 페이지 정상
+  http://127.0.0.1:8502 -> 200
+- 프로 Docker API 정상
+  http://127.0.0.1:8000/health -> 200
+- 프로 로봇 수확 API 테스트 성공
+  POST http://127.0.0.1:8000/robot/harvest
+  payload {"size_class":"중","quality_grade":"중"}
+  response 200
+- /sales/products에서 증가된 재고 확인 완료
+
+10. 테스트로 반영된 실제 DB 변화
+
+테스트 중 실제 DB에 수확 이벤트가 들어갔습니다.
+
+프로 DB
+- 대과 / 상등급: +0.32kg
+- 중과 / 중등급: +0.24kg
+
+무료 로컬 DB
+- 대과 / 상등급: +0.64kg
+
+리뷰 의견
+- 테스트 데이터가 실제 재고에 반영된 상태입니다.
+- 데모에는 큰 문제 없지만, 필요하면 나중에 수확 이벤트 취소/보정 기능을 만드는 것이 좋습니다.
+
+11. 터틀봇 연동 방식
+
+터틀봇에서 보내면 되는 최소 JSON
+{
+  "size_class": "대",
+  "quality_grade": "상"
+}
+
+프로 버전 전송 주소
+POST http://10.10.16.17:8000/robot/harvest
+
+Python 예시
+import requests
+
+url = "http://10.10.16.17:8000/robot/harvest"
+payload = {
+    "size_class": "대",
+    "quality_grade": "상",
+}
+
+response = requests.post(url, json=payload, timeout=3)
+print(response.status_code)
+print(response.json())
+
+주의점
+- 객체를 탐지한 순간이 아니라 실제 수확 성공 후 보내는 것이 좋습니다.
+- 한글 JSON은 Python 파일을 UTF-8로 저장하면 정상 전송됩니다.
+- PowerShell이나 일부 터미널에서 직접 테스트하면 한글 인코딩이 깨질 수 있습니다.
+
+12. 남은 개선 포인트
+
+추천 개선사항
+- 관리자 화면에 최근 수확 이벤트 목록 추가
+- 잘못 들어온 수확 이벤트 취소/보정 기능 추가
+- 로봇 여러 대를 쓰게 되면 robot_id 추가
+- 네트워크 재전송 문제가 생기면 event_id 추가
+- SAMPLE_PRODUCTS에 남은 상품 메타데이터를 DB로 이전
+- 재고 변경 이력 전체를 볼 수 있는 inventory_movements 테이블 고려
+
+종합 의견
+- 현재 MVP 목표에는 적절한 구조입니다.
+- 터틀봇이 보내야 하는 데이터가 단순해서 연동 난이도가 낮습니다.
+- 재고가 DB 기반으로 바뀌었기 때문에 로봇 수확, 판매등록, 쇼핑몰 판매가 같은 재고 흐름을 공유할 수 있습니다.
+- 다음 단계는 수확 이벤트 조회/취소 같은 운영 편의 기능을 붙이는 것이 좋습니다.
