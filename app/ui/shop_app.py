@@ -13,6 +13,7 @@ load_app_env()
 CHAT_API_URL = os.getenv("CHAT_API_URL", "http://localhost:8000/chat")
 API_BASE_URL = CHAT_API_URL.rsplit("/", 1)[0]
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
+ORCHARD_BACKGROUND_IMAGE_PATH = ASSET_DIR / "apple-orchard-bg.png"
 APPLE_IMAGE_PATH = ASSET_DIR / "apple-hero.png"
 PROMO_IMAGE_PATH = ASSET_DIR / "apple-market-banner.png"
 FREE_PROMO_IMAGE_PATHS = (
@@ -36,6 +37,12 @@ SHOP_LOGIN_DEFAULT_USERNAME = os.getenv(
     os.getenv("APP_CUSTOMER_PRO_USERNAME", "customerpro") if IS_PRO_SHOP else os.getenv("APP_CUSTOMER_USERNAME", "customer"),
 )
 SHOP_REQUIRED_ROLE = os.getenv("SHOP_REQUIRED_ROLE", "customer_pro" if IS_PRO_SHOP else "")
+ORCHARD_BACKGROUND_URI = ""
+if ORCHARD_BACKGROUND_IMAGE_PATH.exists():
+    ORCHARD_BACKGROUND_URI = (
+        "data:image/png;base64,"
+        + base64.b64encode(ORCHARD_BACKGROUND_IMAGE_PATH.read_bytes()).decode("ascii")
+    )
 
 st.set_page_config(page_title=SHOP_PAGE_TITLE, page_icon="apple", layout="wide")
 
@@ -45,20 +52,31 @@ st.markdown(
     .stApp { background: #fbfaf4; color: #17231d; }
     .block-container { max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem; }
     .market-header {
-        padding: 1.2rem 1.25rem;
+        padding: 1rem 1.15rem;
         border: 1px solid rgba(23,35,29,.10);
         border-radius: 8px;
         margin-bottom: 1rem;
-        background: linear-gradient(90deg, #eff7eb 0%, #fff8ed 100%);
-        min-height: 138px;
+        background: linear-gradient(90deg, rgba(12,18,14,.80) 0%, rgba(12,18,14,.54) 44%, rgba(255,255,255,.08) 100%), #fffefa;
+        background-size: cover;
+        background-position: center;
+        min-height: 142px;
         display:flex;
         justify-content:space-between;
         align-items:center;
         gap:1rem;
+        box-shadow: 0 12px 28px rgba(23,35,29,.13);
     }
-    .kicker { color: #657261; font-size: .82rem; font-weight: 850; }
+    .kicker { display: none !important; color: #657261; font-size: .82rem; font-weight: 850; }
     .title { color: #17231d; font-size: 2.35rem; line-height: 1.1; font-weight: 900; margin: .15rem 0 .35rem; }
-    .subtitle { color: #5e6961; line-height: 1.55; max-width: 720px; }
+    .market-header .title {
+        display: inline-block;
+        color: #ffffff;
+        background: rgba(12,18,14,.66);
+        border: 1px solid rgba(255,255,255,.22);
+        border-radius: 8px;
+        padding: .42rem .72rem;
+        text-shadow: 0 2px 10px rgba(0,0,0,.35);
+    }
     .product-card {
         background: #fffefa;
         border: 1px solid rgba(23,35,29,.13);
@@ -134,10 +152,7 @@ st.markdown(
         }
     }
     .hero-image {
-        width: 260px;
-        max-height: 118px;
-        object-fit: cover;
-        border-radius: 8px;
+        display: none;
     }
     .catalog-label {
         height: 2.55rem;
@@ -216,10 +231,42 @@ st.markdown(
         border-radius: 8px;
         background: #fffefa;
     }
+    div[data-testid="stCaptionContainer"] {
+        display: none !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+if ORCHARD_BACKGROUND_URI:
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background:
+                linear-gradient(rgba(251, 250, 244, .70), rgba(251, 250, 244, .82)),
+                url("{ORCHARD_BACKGROUND_URI}") center center / cover fixed no-repeat !important;
+        }}
+        .block-container {{
+            background: rgba(255, 253, 248, .86);
+            border: 1px solid rgba(23,35,29,.12);
+            border-radius: 10px;
+            box-shadow: 0 18px 44px rgba(23,35,29,.12);
+            padding-left: 1.35rem;
+            padding-right: 1.35rem;
+            margin-top: .85rem;
+        }}
+        .market-header,
+        .product-card,
+        .history-card {{
+            background-color: rgba(255, 254, 250, .96);
+            backdrop-filter: blur(2px);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def api_get(path: str):
@@ -247,7 +294,6 @@ def require_login() -> dict:
         return st.session_state.shop_user
 
     st.markdown(f'<div class="title">{html.escape(SHOP_PAGE_TITLE)}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">주문하려면 먼저 로그인하세요.</div>', unsafe_allow_html=True)
     with st.form("shop_login_form"):
         username = st.text_input("아이디", value=SHOP_LOGIN_DEFAULT_USERNAME)
         password = st.text_input("비밀번호", type="password")
@@ -346,25 +392,22 @@ SHOP_PAGE_TITLE = get_shop_page_title()
 shop_user = require_login()
 render_free_right_ad()
 
-hero_image = f'<img class="hero-image" src="{apple_image_uri}" />' if apple_image_uri else ""
+hero_background_style = (
+    f' style="background-image: linear-gradient(90deg, rgba(12,18,14,.80) 0%, rgba(12,18,14,.54) 44%, rgba(255,255,255,.08) 100%), url({apple_image_uri});"'
+    if apple_image_uri
+    else ""
+)
 st.markdown(
     """
-    <div class="market-header">
+    <div class="market-header"{hero_background_style}>
       <div>
         <div class="kicker">FRESH LOCAL APPLES</div>
         <div class="title">{title}</div>
-        <div class="subtitle">{subtitle}</div>
       </div>
-      {hero_image}
     </div>
     """.format(
+        hero_background_style=hero_background_style,
         title=html.escape(SHOP_PAGE_TITLE),
-        subtitle=(
-            "GPT API Pro 운영 환경의 판매 상품을 확인하고 주문할 수 있습니다."
-            if IS_PRO_SHOP
-            else "신선한 사과를 합리적인 가격에 만나보세요."
-        ),
-        hero_image=hero_image,
     ),
     unsafe_allow_html=True,
 )

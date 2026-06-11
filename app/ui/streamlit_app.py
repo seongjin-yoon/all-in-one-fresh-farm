@@ -19,6 +19,8 @@ PRICE_DATA_PATH = PROJECT_ROOT / "fruits_data" / "garak_apple_prices.csv"
 FORECAST_DOC_PATH = PROJECT_ROOT / "rag_docs" / "apple_price_forecast_chronos_mini.md"
 NEWS_DOC_PATH = PROJECT_ROOT / "rag_docs" / "fruit_news_2026.md"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
+ORCHARD_BACKGROUND_IMAGE_PATH = ASSET_DIR / "apple-orchard-bg.png"
+ADMIN_TITLE_IMAGE_PATH = ASSET_DIR / "apple-hero.png"
 ADMIN_PROMO_IMAGE_PATH = ASSET_DIR / "apple-market-banner.png"
 FREE_PROMO_IMAGE_PATHS = (
     ASSET_DIR / "ai-campus-onsite-ad.png",
@@ -34,6 +36,12 @@ ADMIN_LOGIN_DEFAULT_USERNAME = os.getenv(
 ADMIN_REQUIRED_ROLE = os.getenv("ADMIN_REQUIRED_ROLE", "admin_pro" if IS_PRO_EDITION else "admin")
 CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", "openai" if IS_PRO_EDITION else "ollama")
 CHAT_PROVIDER_LABEL = "GPT API" if CHAT_LLM_PROVIDER == "openai" else "Local Ollama"
+ORCHARD_BACKGROUND_URI = ""
+if ORCHARD_BACKGROUND_IMAGE_PATH.exists():
+    ORCHARD_BACKGROUND_URI = (
+        "data:image/png;base64,"
+        + base64.b64encode(ORCHARD_BACKGROUND_IMAGE_PATH.read_bytes()).decode("ascii")
+    )
 
 st.set_page_config(page_title=f"{ADMIN_PAGE_TITLE} Admin", page_icon="apple", layout="wide")
 
@@ -51,12 +59,93 @@ st.markdown(
         padding-top: 1.25rem;
     }
     .hero {
-        padding: .8rem 0 .65rem;
-        margin-bottom: .7rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 142px;
+        padding: 1rem 1.15rem;
+        margin-bottom: 1rem;
+        background: linear-gradient(90deg, rgba(12,18,14,.78) 0%, rgba(12,18,14,.48) 42%, rgba(255,255,255,.08) 100%), #fffefa;
+        background-size: cover;
+        background-position: center;
+        border: 1px solid rgba(23,35,29,.12);
+        border-radius: 8px;
+        box-shadow: 0 12px 28px rgba(23,35,29,.13);
     }
-    .kicker { color: #617161; font-size: .82rem; font-weight: 850; }
+    .hero-image {
+        display: none;
+    }
+    .hero .title {
+        display: inline-block;
+        color: #ffffff;
+        background: rgba(12,18,14,.66);
+        border: 1px solid rgba(255,255,255,.22);
+        border-radius: 8px;
+        padding: .42rem .72rem;
+        text-shadow: 0 2px 10px rgba(0,0,0,.35);
+    }
+    .dashboard-panel {
+        background: linear-gradient(135deg, #f2f7ef 0%, #fffaf1 100%);
+        border: 1px solid rgba(23,35,29,.12);
+        border-radius: 8px;
+        padding: .2rem 0 .4rem;
+        margin-bottom: 1.1rem;
+    }
+    .dashboard-panel.inventory {
+        background: #fffefa;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-shortcuts-marker):not(:has(.section-inventory-marker)):not(:has(.section-listings-marker)) {
+        background: rgba(238, 247, 235, .94) !important;
+        border-color: rgba(78, 122, 83, .20) !important;
+        box-shadow: 0 12px 28px rgba(23,35,29,.075);
+        margin-bottom: 1.05rem;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-inventory-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-listings-marker)) {
+        background: rgba(255, 247, 226, .94) !important;
+        border-color: rgba(170, 122, 38, .20) !important;
+        box-shadow: 0 12px 28px rgba(23,35,29,.075);
+        margin-bottom: 1.05rem;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-listings-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-inventory-marker)) {
+        background: rgba(238, 246, 255, .94) !important;
+        border-color: rgba(68, 108, 156, .20) !important;
+        box-shadow: 0 12px 28px rgba(23,35,29,.075);
+        margin-bottom: 1.05rem;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-shortcuts-marker):not(:has(.section-inventory-marker)):not(:has(.section-listings-marker)) div[data-testid="column"],
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-inventory-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-listings-marker)) div[data-testid="column"],
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-listings-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-inventory-marker)) div[data-testid="column"] {
+        padding-top: .25rem;
+        padding-bottom: .35rem;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-shortcuts-marker):not(:has(.section-inventory-marker)):not(:has(.section-listings-marker)) .feature-card {
+        background: rgba(255, 254, 250, .96);
+        border-color: rgba(78, 122, 83, .18);
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-inventory-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-listings-marker)) .product-card {
+        background: rgba(255, 254, 250, .96);
+        border-color: rgba(170, 122, 38, .18);
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-listings-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-inventory-marker)) .product-card,
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.section-listings-marker):not(:has(.section-shortcuts-marker)):not(:has(.section-inventory-marker)) .info-card {
+        background: rgba(255, 254, 250, .96);
+        border-color: rgba(68, 108, 156, .18);
+    }
+    .panel-title {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        background: #17231d;
+        color: #fff;
+        border-radius: 8px;
+        padding: .38rem .68rem;
+        font-weight: 950;
+        font-size: .96rem;
+        margin: .35rem 0 .45rem;
+    }
+    .kicker { display: none !important; color: #617161; font-size: .82rem; font-weight: 850; }
     .title { color: #17231d; font-size: 2.15rem; line-height: 1.12; font-weight: 900; margin: .15rem 0 .25rem; }
-    .subtitle { color: #5b675f; font-size: .98rem; line-height: 1.55; max-width: 760px; }
     .section-label { color: #18251f; font-size: 1.02rem; font-weight: 900; margin: .7rem 0 .35rem; }
     .metric-card, .info-card, .product-card, .answer-box, .timeline-card {
         background: #fffefa;
@@ -77,15 +166,27 @@ st.markdown(
         border: 1px solid rgba(23,35,29,.13);
         border-radius: 8px;
         padding: .95rem 1rem;
-        min-height: 132px;
+        height: 148px;
+        box-sizing: border-box;
+        overflow: hidden;
         box-shadow: 0 8px 20px rgba(23,35,29,.045);
         margin-bottom: .35rem;
     }
     .feature-icon { font-size: 1.45rem; margin-bottom: .2rem; }
     .feature-title { color: #17231d; font-weight: 950; font-size: 1.02rem; margin-bottom: .25rem; }
     .feature-metric { color: #16713a; font-weight: 950; font-size: 1.18rem; line-height: 1.2; }
-    .feature-note { color: #6d7770; font-size: .83rem; line-height: 1.45; margin-top: .22rem; }
+    .feature-note {
+        color: #6d7770;
+        font-size: .83rem;
+        line-height: 1.45;
+        margin-top: .22rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
     .answer-box { color: #26362d; line-height: 1.7; margin-top: .3rem; }
+    .product-card { margin-bottom: .85rem; }
     .product-title { color: #17231d; font-weight: 900; font-size: 1.03rem; margin-bottom: .2rem; }
     .product-meta { color: #56635b; line-height: 1.55; font-size: .9rem; }
     .pill {
@@ -103,12 +204,16 @@ st.markdown(
     .quiet { color: #717b73; font-size: .86rem; line-height: 1.55; }
     .side-brand { padding: .55rem 0 .8rem; border-bottom:1px solid rgba(23,35,29,.1); margin-bottom:.75rem; }
     .side-logo { font-size:1.45rem; font-weight:950; color:#15231c; }
-    .side-sub { color:#6d7770; font-size:.78rem; }
+    .side-sub { display: none !important; color:#6d7770; font-size:.78rem; }
     .side-menu-item { padding:.58rem .7rem; border-radius:8px; color:#223028; font-weight:850; margin:.16rem 0; }
     .side-menu-item.active { background:#16713a; color:#fff; }
     .status-card {
+        display: none !important;
         background:#fffefa; border:1px solid rgba(23,35,29,.12); border-radius:8px;
         padding:.75rem; margin-top:1rem; color:#25342b; font-size:.84rem; line-height:1.7;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] {
+        display: none !important;
     }
     .side-ad {
         background: #fffefa;
@@ -660,7 +765,6 @@ def require_login() -> dict:
         return st.session_state.admin_user
 
     st.markdown(f'<div class="title">{html.escape(ADMIN_PAGE_TITLE)}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">관리자 계정으로 로그인하세요.</div>', unsafe_allow_html=True)
     with st.form("admin_login_form"):
         username = st.text_input("아이디", value=ADMIN_LOGIN_DEFAULT_USERNAME)
         password = st.text_input("비밀번호", type="password")
@@ -699,7 +803,6 @@ with st.sidebar:
         ),
         unsafe_allow_html=True,
     )
-    st.caption(f"{admin_user['display_name']}님 로그인 · {CHAT_PROVIDER_LABEL}")
     nav_items = [
         ("대시보드", "📊  대시보드"),
         ("판매상품등록", "📝  판매상품등록"),
@@ -743,28 +846,58 @@ with st.sidebar:
 
 render_free_right_ad()
 
+title_image_uri = image_data_uri(ADMIN_TITLE_IMAGE_PATH)
+hero_background_style = (
+    f' style="background-image: linear-gradient(90deg, rgba(12,18,14,.80) 0%, rgba(12,18,14,.56) 44%, rgba(255,255,255,.06) 100%), url({title_image_uri});"'
+    if title_image_uri
+    else ""
+)
 st.markdown(
     """
-    <div class="hero">
-      <div class="kicker">{kicker}</div>
-      <div class="title">{title}</div>
-      <div class="subtitle">{subtitle}</div>
+    <div class="hero"{hero_background_style}>
+      <div>
+        <div class="kicker">{kicker}</div>
+        <div class="title">{title}</div>
+      </div>
     </div>
     """.format(
+        hero_background_style=hero_background_style,
         kicker=(
             "GPT API · CLOUD BACKEND · SALES OPS"
             if IS_PRO_EDITION
             else "LOCAL LLM · ROBOT HARVEST · SALES OPS"
         ),
         title=html.escape(ADMIN_PAGE_TITLE),
-        subtitle=(
-            "GPT API 기반으로 사과 재고, 쇼핑몰 등록, 주문 알림, 시세예측 RAG 반영을 관리합니다."
-            if IS_PRO_EDITION
-            else "로봇 수확 이벤트, 사과 재고, 쇼핑몰 등록, 주문 알림, 시세예측 RAG 반영을 한 화면에서 관리합니다."
-        ),
     ),
     unsafe_allow_html=True,
 )
+
+if ORCHARD_BACKGROUND_URI:
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background:
+                linear-gradient(rgba(248, 250, 247, .74), rgba(248, 250, 247, .82)),
+                url("{ORCHARD_BACKGROUND_URI}") center center / cover fixed no-repeat !important;
+        }}
+        .block-container {{
+            background: rgba(255, 253, 248, .86);
+            border: 1px solid rgba(23,35,29,.12);
+            border-radius: 10px;
+            box-shadow: 0 18px 44px rgba(23,35,29,.12);
+            padding-left: 1.35rem;
+            padding-right: 1.35rem;
+            margin-top: .85rem;
+        }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background: rgba(255, 254, 250, .94);
+            backdrop-filter: blur(2px);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 try:
     products = fetch_products()
@@ -790,62 +923,99 @@ if selected_page == "대시보드":
     total_available_kg = sum(float(product["available_kg"]) for product in products)
     total_listed_kg = sum(int(product["listed_kg"]) for product in products)
 
-    st.markdown('<div class="section-label">📊 기능 바로가기</div>', unsafe_allow_html=True)
-    feature_cards = [
-        (
-            "🤖",
-            "AI 도우미",
-            CHAT_PROVIDER_LABEL,
-            "재고, 시세, 판매 판단을 질문으로 확인합니다.",
-            "AI 도우미",
-        ),
-        (
-            "📝",
-            "판매상품등록",
-            format_kg(total_available_kg),
-            "쇼핑몰에 추가 등록 가능한 재고를 상품으로 올립니다.",
-            "판매상품등록",
-        ),
-        (
-            "🍎",
-            "판매중인상품",
-            f"{len(active_listings)}개",
-            f"현재 쇼핑몰 등록량 {total_listed_kg:,}kg을 확인합니다.",
-            "판매중인상품",
-        ),
-        (
-            "🔄",
-            "가격 정보 업데이트",
-            latest_date,
-            "시세 수집, 예측 문서 생성, RAG 반영을 실행합니다.",
-            "가격 정보 업데이트",
-        ),
-        (
-            "📰",
-            "최신 뉴스 업데이트",
-            latest_news_date,
-            "과일 뉴스를 수집하고 요약 문서로 반영합니다.",
-            "최신 뉴스 업데이트",
-        ),
-        (
-            "🔔",
-            "알림",
-            f"{len(orders)}건",
-            "주문 접수와 판매 등록 알림을 확인합니다.",
-            "알림",
-        ),
-    ]
-    for row_start in range(0, len(feature_cards), 3):
-        card_cols = st.columns(3)
-        for col, card in zip(card_cols, feature_cards[row_start : row_start + 3]):
-            with col:
-                render_feature_card(*card)
+    with st.container(border=True):
+        st.markdown(
+            '<span class="section-shortcuts-marker"></span><div class="panel-title">📊 기능 바로가기</div>',
+            unsafe_allow_html=True,
+        )
+        feature_cards = [
+            (
+                "🤖",
+                "AI 도우미",
+                CHAT_PROVIDER_LABEL,
+                "재고, 시세, 판매 판단을 질문으로 확인합니다.",
+                "AI 도우미",
+            ),
+            (
+                "📝",
+                "판매상품등록",
+                format_kg(total_available_kg),
+                "쇼핑몰에 추가 등록 가능한 재고를 상품으로 올립니다.",
+                "판매상품등록",
+            ),
+            (
+                "🍎",
+                "판매중인상품",
+                f"{len(active_listings)}개",
+                f"현재 쇼핑몰 등록량 {total_listed_kg:,}kg을 확인합니다.",
+                "판매중인상품",
+            ),
+            (
+                "🔄",
+                "가격 정보 업데이트",
+                latest_date,
+                "시세 수집, 예측 문서 생성, RAG 반영을 실행합니다.",
+                "가격 정보 업데이트",
+            ),
+            (
+                "📰",
+                "최신 뉴스 업데이트",
+                latest_news_date,
+                "과일 뉴스를 수집하고 요약 문서로 반영합니다.",
+                "최신 뉴스 업데이트",
+            ),
+            (
+                "🔔",
+                "알림",
+                f"{len(orders)}건",
+                "주문 접수와 판매 등록 알림을 확인합니다.",
+                "알림",
+            ),
+        ]
+        for row_start in range(0, len(feature_cards), 3):
+            card_cols = st.columns(3)
+            for col, card in zip(card_cols, feature_cards[row_start : row_start + 3]):
+                with col:
+                    render_feature_card(*card)
 
-    st.markdown('<div class="section-label">🍎 재고 요약</div>', unsafe_allow_html=True)
-    inventory_cols = st.columns(3)
-    for index, product in enumerate(products[:6]):
-        with inventory_cols[index % 3]:
-            render_product_card(product)
+    with st.container(border=True):
+        st.markdown(
+            '<span class="section-inventory-marker"></span><div class="panel-title">🍎 재고 요약</div>',
+            unsafe_allow_html=True,
+        )
+        inventory_cols = st.columns(3, gap="medium")
+        for index, product in enumerate(products[:6]):
+            with inventory_cols[index % 3]:
+                render_product_card(product)
+
+    with st.container(border=True):
+        st.markdown(
+            '<span class="section-listings-marker"></span><div class="panel-title">🛒 판매중인 상품</div>',
+            unsafe_allow_html=True,
+        )
+        if active_listings:
+            listing_cols = st.columns(3, gap="medium")
+            for index, listing in enumerate(active_listings[:6]):
+                with listing_cols[index % 3]:
+                    total_amount = int(listing["quantity_kg"]) * int(listing["price_per_kg"])
+                    st.markdown(
+                        f"""
+                        <div class="product-card">
+                          <div class="product-title">{html.escape(item_name(listing))}</div>
+                          <div>
+                            <span class="pill">{html.escape(listing['package_unit'])}</span>
+                            <span class="pill">남은 수량 {int(listing['quantity_kg']):,}kg</span>
+                          </div>
+                          <div class="product-meta">
+                            <span class="price">{format_won(listing['price_per_kg'])}/kg</span><br>
+                            판매 가능 금액 {total_amount:,}원
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.markdown('<div class="info-card quiet">판매중인 상품이 없습니다.</div>', unsafe_allow_html=True)
 
 if selected_page == "판매페이지 관리":
     st.markdown('<div class="section-label">🛒 판매페이지 관리</div>', unsafe_allow_html=True)
@@ -853,7 +1023,6 @@ if selected_page == "판매페이지 관리":
     current_title = settings.get("shop_page_title", "Apple Market")
 
     with st.container(border=True):
-        st.caption("쇼핑몰 상단에 표시되는 판매페이지 이름입니다.")
         shop_page_title = st.text_input(
             "판매페이지 제목",
             value=current_title,
@@ -871,24 +1040,8 @@ if selected_page == "판매페이지 관리":
                 st.success(f"판매페이지 제목을 '{updated['shop_page_title']}'로 저장했습니다.")
                 st.rerun()
 
-    st.markdown(
-        f"""
-        <div class="info-card">
-          <div class="metric-label">현재 판매페이지 제목</div>
-          <div class="metric-value">{html.escape(current_title)}</div>
-          <div class="metric-note">쇼핑몰을 새로고침하면 변경된 제목이 반영됩니다.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
 if selected_page == "AI 도우미":
-    left, right = st.columns([1.45, 1])
-    with left:
-        render_ai_assistant(show_sources=True)
-
-    with right:
-        render_recent_orders(orders)
+    render_ai_assistant(show_sources=True)
 
 if selected_page == "판매상품등록":
     st.markdown('<div class="section-label">📝 판매상품등록</div>', unsafe_allow_html=True)
@@ -1000,14 +1153,6 @@ if selected_page == "가격 정보 업데이트":
     with price_cols[2]:
         render_metric("업데이트 방식", "수동 실행", "크롤링·예측·재임베딩")
 
-    st.markdown(
-        """
-        <div class="info-card quiet">
-        버튼을 누르면 가락시장 사과 시세를 수집하고 Chronos mini 예측 문서를 다시 생성한 뒤 MariaDB Vector에 반영합니다.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     if st.button("가격 정보 업데이트", type="primary"):
         with st.spinner("시세 수집, 예측, RAG 반영을 진행하는 중입니다..."):
             try:
@@ -1016,7 +1161,6 @@ if selected_page == "가격 정보 업데이트":
                 st.error(f"가격 정보 업데이트 실패: {exc}")
             else:
                 st.success("시세 예측 RAG 문서를 업데이트했습니다.")
-                st.json(result)
 
 if selected_page == "최신 뉴스 업데이트":
     st.markdown('<div class="section-label">📰 최신 뉴스 업데이트</div>', unsafe_allow_html=True)
@@ -1028,14 +1172,6 @@ if selected_page == "최신 뉴스 업데이트":
     with news_cols[2]:
         render_metric("업데이트 방식", "수동 실행", "뉴스 수집·요약·재임베딩")
 
-    st.markdown(
-        """
-        <div class="info-card quiet">
-        버튼을 누르면 과일 시장 관련 뉴스를 RSS로 수집하고, 기사 원문 대신 가격·수급·판매 판단에 필요한 요약만 Markdown 문서로 저장한 뒤 MariaDB Vector에 반영합니다.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     render_news_summary(limit=5)
     if st.button("최신 뉴스 업데이트", type="primary"):
         with st.spinner("뉴스 수집, 요약 문서 생성, RAG 반영을 진행하는 중입니다..."):
@@ -1045,7 +1181,6 @@ if selected_page == "최신 뉴스 업데이트":
                 st.error(f"최신 뉴스 업데이트 실패: {exc}")
             else:
                 st.success("과일 뉴스 요약 RAG 문서를 업데이트했습니다.")
-                st.json(result)
 
 if selected_page == "알림":
     st.markdown('<div class="section-label">🔔 농부 알림</div>', unsafe_allow_html=True)

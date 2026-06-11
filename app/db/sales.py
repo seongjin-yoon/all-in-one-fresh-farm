@@ -1,10 +1,12 @@
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.db.connection import db_cursor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FORECAST_DOC_PATH = PROJECT_ROOT / "rag_docs" / "apple_price_forecast_chronos_mini.md"
+KST = timezone(timedelta(hours=9))
 
 SIZE_WEIGHT_KG = {
     "대": 0.32,
@@ -89,6 +91,10 @@ def decimal_to_float(value) -> float:
     return round(float(value or 0), 3)
 
 
+def current_kst_naive() -> datetime:
+    return datetime.now(KST).replace(tzinfo=None, microsecond=0)
+
+
 def get_sample_product(product_name: str, size_class: str, grade: str) -> dict:
     return next(
         item
@@ -98,6 +104,68 @@ def get_sample_product(product_name: str, size_class: str, grade: str) -> dict:
             and item["size_class"] == size_class
             and item["grade"] == grade
         )
+    )
+
+
+def _seed_apple_items_from_inventory(cursor) -> None:
+    cursor.execute("SELECT COUNT(*) AS count FROM apple_items")
+    if int(cursor.fetchone()["count"]) > 0:
+        return
+
+    cursor.execute(
+        """
+        SELECT product_name, size_class, grade, available_kg, reserved_kg
+        FROM apple_inventory
+        ORDER BY
+            FIELD(size_class, '대', '중'),
+            FIELD(grade, '상', '중', '하')
+        """
+    )
+    inventory_rows = cursor.fetchall()
+
+    now = current_kst_naive()
+    item_rows = []
+    item_index = 0
+    for row in inventory_rows:
+        size_class = normalize_size_class(row["size_class"])
+        grade = normalize_quality_grade(row["grade"])
+        estimated_weight_kg = SIZE_WEIGHT_KG[size_class]
+        status_counts = {
+            "available": round(decimal_to_float(row["available_kg"]) / estimated_weight_kg),
+            "reserved": round(decimal_to_float(row["reserved_kg"]) / estimated_weight_kg),
+        }
+
+        for status, item_count in status_counts.items():
+            for _ in range(max(int(item_count), 0)):
+                harvested_at = now - timedelta(
+                    days=item_index % 7,
+                    hours=item_index % 11,
+                    minutes=(item_index * 7) % 60,
+                )
+                item_rows.append(
+                    (
+                        row["product_name"],
+                        size_class,
+                        grade,
+                        estimated_weight_kg,
+                        status,
+                        harvested_at,
+                    )
+                )
+                item_index += 1
+
+    if not item_rows:
+        return
+
+    cursor.executemany(
+        """
+        INSERT INTO apple_items (
+            product_name, size_class, quality_grade, estimated_weight_kg,
+            inventory_status, harvested_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        item_rows,
     )
 
 
@@ -134,6 +202,34 @@ def ensure_inventory_tables() -> None:
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS apple_items (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                product_name VARCHAR(128) NOT NULL DEFAULT '사과',
+                size_class VARCHAR(32) NOT NULL,
+                quality_grade VARCHAR(32) NOT NULL,
+                estimated_weight_kg DECIMAL(8, 3) NOT NULL,
+                inventory_status ENUM('available', 'reserved', 'listed', 'sold', 'discarded')
+                    NOT NULL DEFAULT 'available',
+                listing_id BIGINT NULL,
+                order_id BIGINT NULL,
+                harvested_at DATETIME NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_apple_items_product_grade_status (
+                    product_name, size_class, quality_grade, inventory_status
+                ),
+                INDEX idx_apple_items_listing_status (listing_id, inventory_status),
+                INDEX idx_apple_items_order_id (order_id),
+                INDEX idx_apple_items_harvested_at (harvested_at)
+            )
+            """
+        )
+        cursor.execute("ALTER TABLE apple_items ADD COLUMN IF NOT EXISTS listing_id BIGINT NULL AFTER inventory_status")
+        cursor.execute("ALTER TABLE apple_items ADD COLUMN IF NOT EXISTS order_id BIGINT NULL AFTER listing_id")
+        cursor.execute("ALTER TABLE apple_items ADD INDEX IF NOT EXISTS idx_apple_items_listing_status (listing_id, inventory_status)")
+        cursor.execute("ALTER TABLE apple_items ADD INDEX IF NOT EXISTS idx_apple_items_order_id (order_id)")
 
         for product in SAMPLE_PRODUCTS:
             cursor.execute(
@@ -154,6 +250,71 @@ def ensure_inventory_tables() -> None:
                     product["sales_channel"],
                 ),
             )
+        _seed_apple_items_from_inventory(cursor)
+
+
+def reset_demo_inventory_data() -> dict:
+    ensure_inventory_tables()
+    with db_cursor() as cursor:
+        for table_name in ("sales_orders", "sales_listings", "sales_drafts"):
+            cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            if cursor.fetchone():
+                cursor.execute(f"DELETE FROM {table_name}")
+        cursor.execute("DELETE FROM harvest_events")
+        cursor.execute("DELETE FROM apple_items")
+        cursor.execute("DELETE FROM apple_inventory")
+        cursor.execute("SHOW TABLES LIKE 'notifications'")
+        if cursor.fetchone():
+            cursor.execute(
+                """
+                DELETE FROM notifications
+                WHERE event_type IN (
+                    'draft_created',
+                    'draft_approved',
+                    'listing_registered',
+                    'order_created',
+                    'harvest_recorded'
+                )
+                """
+            )
+
+        for product in SAMPLE_PRODUCTS:
+            cursor.execute(
+                """
+                INSERT INTO apple_inventory (
+                    product_name, size_class, grade, available_kg, reserved_kg,
+                    package_unit, sales_channel
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    product["product_name"],
+                    product["size_class"],
+                    product["grade"],
+                    product["available_kg"],
+                    product["reserved_kg"],
+                    product["package_unit"],
+                    product["sales_channel"],
+                ),
+            )
+        _seed_apple_items_from_inventory(cursor)
+
+        cursor.execute("SELECT COUNT(*) AS item_count FROM apple_items")
+        item_count = int(cursor.fetchone()["item_count"] or 0)
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(estimated_weight_kg), 0) AS total_weight_kg
+            FROM apple_items
+            WHERE inventory_status IN ('available', 'reserved')
+            """
+        )
+        total_weight_kg = decimal_to_float(cursor.fetchone()["total_weight_kg"])
+
+    return {
+        "inventory_rows": len(SAMPLE_PRODUCTS),
+        "item_count": item_count,
+        "total_weight_kg": total_weight_kg,
+    }
 
 
 def list_inventory_products() -> list[dict]:
@@ -161,12 +322,55 @@ def list_inventory_products() -> list[dict]:
     with db_cursor() as cursor:
         cursor.execute(
             """
-            SELECT product_name, size_class, grade, available_kg, reserved_kg,
-                   package_unit, sales_channel
-            FROM apple_inventory
+            SELECT
+                inventory.product_name,
+                inventory.size_class,
+                inventory.grade,
+                CASE
+                    WHEN COUNT(item.id) > 0 THEN SUM(CASE
+                        WHEN item.inventory_status = 'available' THEN item.estimated_weight_kg
+                        ELSE 0
+                    END)
+                    ELSE inventory.available_kg
+                END AS available_kg,
+                SUM(CASE
+                    WHEN item.inventory_status = 'listed' THEN item.estimated_weight_kg
+                    ELSE 0
+                END) AS listed_item_kg,
+                SUM(CASE
+                    WHEN item.inventory_status IN ('listed', 'sold') THEN item.estimated_weight_kg
+                    ELSE 0
+                END) AS linked_listing_item_kg,
+                CASE
+                    WHEN COUNT(item.id) > 0 THEN SUM(CASE
+                        WHEN item.inventory_status = 'reserved' THEN item.estimated_weight_kg
+                        ELSE 0
+                    END)
+                    ELSE inventory.reserved_kg
+                END AS reserved_kg,
+                COUNT(item.id) AS item_count,
+                MIN(item.harvested_at) AS oldest_harvested_at,
+                MAX(item.harvested_at) AS latest_harvested_at,
+                inventory.package_unit,
+                inventory.sales_channel
+            FROM apple_inventory AS inventory
+            LEFT JOIN apple_items AS item
+              ON item.product_name = inventory.product_name
+             AND item.size_class = inventory.size_class
+             AND item.quality_grade = inventory.grade
+             AND item.inventory_status <> 'discarded'
+            GROUP BY
+                inventory.id,
+                inventory.product_name,
+                inventory.size_class,
+                inventory.grade,
+                inventory.available_kg,
+                inventory.reserved_kg,
+                inventory.package_unit,
+                inventory.sales_channel
             ORDER BY
-                FIELD(size_class, '대', '중'),
-                FIELD(grade, '상', '중', '하')
+                FIELD(inventory.size_class, '대', '중'),
+                FIELD(inventory.grade, '상', '중', '하')
             """
         )
         rows = cursor.fetchall()
@@ -183,7 +387,10 @@ def list_inventory_products() -> list[dict]:
                 **sample_product,
                 **row,
                 "available_kg": decimal_to_float(row["available_kg"]),
+                "listed_item_kg": decimal_to_float(row["listed_item_kg"]),
+                "linked_listing_item_kg": decimal_to_float(row["linked_listing_item_kg"]),
                 "reserved_kg": decimal_to_float(row["reserved_kg"]),
+                "item_count": int(row["item_count"] or 0),
             }
         )
     return products
@@ -211,21 +418,72 @@ def get_product_template(product_name: str, size_class: str, grade: str) -> dict
     with db_cursor() as cursor:
         cursor.execute(
             """
-            SELECT product_name, size_class, grade, available_kg, reserved_kg,
-                   package_unit, sales_channel
-            FROM apple_inventory
-            WHERE product_name = ? AND size_class = ? AND grade = ?
+            SELECT
+                inventory.product_name,
+                inventory.size_class,
+                inventory.grade,
+                CASE
+                    WHEN COUNT(item.id) > 0 THEN SUM(CASE
+                        WHEN item.inventory_status = 'available' THEN item.estimated_weight_kg
+                        ELSE 0
+                    END)
+                    ELSE inventory.available_kg
+                END AS available_kg,
+                SUM(CASE
+                    WHEN item.inventory_status = 'listed' THEN item.estimated_weight_kg
+                    ELSE 0
+                END) AS listed_item_kg,
+                SUM(CASE
+                    WHEN item.inventory_status IN ('listed', 'sold') THEN item.estimated_weight_kg
+                    ELSE 0
+                END) AS linked_listing_item_kg,
+                CASE
+                    WHEN COUNT(item.id) > 0 THEN SUM(CASE
+                        WHEN item.inventory_status = 'reserved' THEN item.estimated_weight_kg
+                        ELSE 0
+                    END)
+                    ELSE inventory.reserved_kg
+                END AS reserved_kg,
+                COUNT(item.id) AS item_count,
+                MIN(item.harvested_at) AS oldest_harvested_at,
+                MAX(item.harvested_at) AS latest_harvested_at,
+                inventory.package_unit,
+                inventory.sales_channel
+            FROM apple_inventory AS inventory
+            LEFT JOIN apple_items AS item
+              ON item.product_name = inventory.product_name
+             AND item.size_class = inventory.size_class
+             AND item.quality_grade = inventory.grade
+             AND item.inventory_status <> 'discarded'
+            WHERE inventory.product_name = ?
+              AND inventory.size_class = ?
+              AND inventory.grade = ?
+            GROUP BY
+                inventory.id,
+                inventory.product_name,
+                inventory.size_class,
+                inventory.grade,
+                inventory.available_kg,
+                inventory.reserved_kg,
+                inventory.package_unit,
+                inventory.sales_channel
             """,
             (product_name, size_class, grade),
         )
         product = cursor.fetchone()
     if not product:
-        product = sample_product
+        product = {
+            **sample_product,
+            "listed_item_kg": 0,
+            "linked_listing_item_kg": 0,
+        }
     else:
         product = {
             **sample_product,
             **product,
             "available_kg": decimal_to_float(product["available_kg"]),
+            "listed_item_kg": decimal_to_float(product["listed_item_kg"]),
+            "linked_listing_item_kg": decimal_to_float(product["linked_listing_item_kg"]),
             "reserved_kg": decimal_to_float(product["reserved_kg"]),
         }
     return {
@@ -353,8 +611,12 @@ def get_available_kg(product_name: str, size_class: str, grade: str) -> float:
     grade = normalize_quality_grade(grade)
     product = get_product_template(product_name, size_class, grade)
     commitments = get_listing_commitments().get((product_name, size_class, grade), {})
+    legacy_listed_kg = max(
+        int(commitments.get("listed_kg", 0)) - decimal_to_float(product.get("linked_listing_item_kg", 0)),
+        0,
+    )
     return round(
-        max(decimal_to_float(product["available_kg"]) - int(commitments.get("listed_kg", 0)), 0),
+        max(decimal_to_float(product["available_kg"]) - legacy_listed_kg, 0),
         3,
     )
 
@@ -372,6 +634,79 @@ def validate_new_listing_quantity(
         raise ValueError(
             f"{product_name} {size_class}과 {grade} 등급 신규 등록 가능 재고는 {available_kg}kg입니다."
         )
+
+
+def select_fifo_apple_items(
+    cursor,
+    product_name: str,
+    size_class: str,
+    grade: str,
+    target_kg: float,
+    inventory_status: str,
+    listing_id: int | None = None,
+) -> dict:
+    params = [product_name, size_class, grade, inventory_status]
+    listing_filter = ""
+    if listing_id is not None:
+        listing_filter = "AND listing_id = ?"
+        params.append(listing_id)
+
+    cursor.execute(
+        f"""
+        SELECT id, estimated_weight_kg
+        FROM apple_items
+        WHERE product_name = ?
+          AND size_class = ?
+          AND quality_grade = ?
+          AND inventory_status = ?
+          {listing_filter}
+        ORDER BY harvested_at ASC, id ASC
+        FOR UPDATE
+        """,
+        tuple(params),
+    )
+
+    selected_ids = []
+    selected_weight_kg = 0.0
+    for row in cursor.fetchall():
+        selected_ids.append(int(row["id"]))
+        selected_weight_kg += decimal_to_float(row["estimated_weight_kg"])
+        if selected_weight_kg >= float(target_kg):
+            break
+
+    if selected_weight_kg < float(target_kg):
+        raise ValueError(
+            f"{product_name} {size_class}과 {grade} 등급 {inventory_status} 재고가 {target_kg}kg보다 부족합니다."
+        )
+
+    return {
+        "item_ids": selected_ids,
+        "item_count": len(selected_ids),
+        "total_weight_kg": round(selected_weight_kg, 3),
+    }
+
+
+def update_apple_item_status(
+    cursor,
+    item_ids: list[int],
+    inventory_status: str,
+    listing_id: int | None = None,
+    order_id: int | None = None,
+) -> None:
+    if not item_ids:
+        return
+
+    placeholders = ", ".join(["?"] * len(item_ids))
+    cursor.execute(
+        f"""
+        UPDATE apple_items
+        SET inventory_status = ?,
+            listing_id = COALESCE(?, listing_id),
+            order_id = COALESCE(?, order_id)
+        WHERE id IN ({placeholders})
+        """,
+        (inventory_status, listing_id, order_id, *item_ids),
+    )
 
 
 def extract_quantity_kg(text: str) -> int | None:
@@ -419,12 +754,19 @@ def list_products() -> list[dict]:
         listed_kg = int(committed.get("listed_kg", 0))
         sold_kg = int(committed.get("sold_kg", 0))
         remaining_listing_kg = int(committed.get("remaining_listing_kg", 0))
+        listed_item_kg = decimal_to_float(product.get("listed_item_kg", 0))
+        linked_listing_item_kg = decimal_to_float(product.get("linked_listing_item_kg", 0))
+        legacy_listed_kg = max(listed_kg - linked_listing_item_kg, 0)
+        additional_available_kg = round(
+            max(decimal_to_float(product["available_kg"]) - legacy_listed_kg, 0),
+            3,
+        )
         products.append(
             {
                 **product,
                 "estimated_unit_weight_kg": SIZE_WEIGHT_KG[product["size_class"]],
-                "base_available_kg": decimal_to_float(product["available_kg"]),
-                "available_kg": round(max(decimal_to_float(product["available_kg"]) - listed_kg, 0), 3),
+                "base_available_kg": round(decimal_to_float(product["available_kg"]) + listed_item_kg, 3),
+                "available_kg": additional_available_kg,
                 "listed_kg": listed_kg,
                 "sold_kg": sold_kg,
                 "remaining_listing_kg": remaining_listing_kg,
@@ -436,6 +778,52 @@ def list_products() -> list[dict]:
             }
         )
     return products
+
+
+def list_harvest_summary(
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[dict]:
+    ensure_inventory_tables()
+    filters = ["inventory_status <> 'discarded'"]
+    params = []
+    if start_at is not None:
+        filters.append("harvested_at >= ?")
+        params.append(start_at)
+    if end_at is not None:
+        filters.append("harvested_at < ?")
+        params.append(end_at)
+
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                product_name,
+                size_class,
+                quality_grade,
+                COUNT(*) AS item_count,
+                COALESCE(SUM(estimated_weight_kg), 0) AS total_weight_kg,
+                MIN(harvested_at) AS oldest_harvested_at,
+                MAX(harvested_at) AS latest_harvested_at
+            FROM apple_items
+            WHERE {" AND ".join(filters)}
+            GROUP BY product_name, size_class, quality_grade
+            ORDER BY
+                FIELD(size_class, '대', '중'),
+                FIELD(quality_grade, '상', '중', '하')
+            """,
+            tuple(params),
+        )
+        rows = cursor.fetchall()
+
+    return [
+        {
+            **row,
+            "item_count": int(row["item_count"] or 0),
+            "total_weight_kg": decimal_to_float(row["total_weight_kg"]),
+        }
+        for row in rows
+    ]
 
 
 def parse_sales_registration_request(text: str, context_text: str | None = None) -> dict | None:
@@ -515,6 +903,7 @@ def record_harvest_event(
     size_class: str,
     quality_grade: str,
     product_name: str = "사과",
+    harvested_at: datetime | None = None,
 ) -> dict:
     if size_class not in SIZE_WEIGHT_KG:
         raise ValueError("size_class must be one of: 대, 중")
@@ -525,18 +914,29 @@ def record_harvest_event(
     grade = normalize_quality_grade(quality_grade)
     product = get_product_template(product_name, size_class, grade)
     estimated_weight_kg = float(SIZE_WEIGHT_KG[size_class])
+    received_at = (harvested_at.replace(tzinfo=None) if harvested_at else current_kst_naive())
 
     with db_cursor() as cursor:
         cursor.execute(
             """
             INSERT INTO harvest_events (
-                product_name, size_class, quality_grade, estimated_weight_kg
+                product_name, size_class, quality_grade, estimated_weight_kg, created_at
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (product_name, size_class, grade, estimated_weight_kg),
+            (product_name, size_class, grade, estimated_weight_kg, received_at),
         )
         event_id = int(cursor.lastrowid)
+        cursor.execute(
+            """
+            INSERT INTO apple_items (
+                product_name, size_class, quality_grade, estimated_weight_kg,
+                inventory_status, harvested_at
+            )
+            VALUES (?, ?, ?, ?, 'available', ?)
+            """,
+            (product_name, size_class, grade, estimated_weight_kg, received_at),
+        )
         cursor.execute(
             """
             UPDATE apple_inventory
@@ -582,6 +982,7 @@ def record_harvest_event(
         "size_class": size_class,
         "quality_grade": grade,
         "estimated_weight_kg": estimated_weight_kg,
+        "harvested_at": received_at,
         "current_base_available_kg": current_base_available_kg,
         "current_available_kg": current_available_kg,
     }
@@ -729,6 +1130,20 @@ def register_draft(draft_id: int) -> dict:
             ),
         )
         listing_id = int(cursor.lastrowid)
+        allocation = select_fifo_apple_items(
+            cursor,
+            draft["product_name"],
+            draft["size_class"],
+            draft["grade"],
+            float(draft["quantity_kg"]),
+            "available",
+        )
+        update_apple_item_status(
+            cursor,
+            allocation["item_ids"],
+            "listed",
+            listing_id=listing_id,
+        )
         cursor.execute(
             "UPDATE sales_drafts SET status = 'registered' WHERE id = ?",
             (draft_id,),
@@ -739,7 +1154,9 @@ def register_draft(draft_id: int) -> dict:
         "판매 등록 완료",
         (
             f"{draft['product_name']} {draft['size_class']}과 {draft['grade']} 등급 {draft['quantity_kg']}kg이 "
-            f"{draft['sales_channel']}에 등록되었습니다. kg당 판매가: {draft['price_per_kg']:,}원"
+            f"{draft['sales_channel']}에 등록되었습니다. "
+            f"FIFO 기준 {allocation['item_count']:,}개, 실제 묶음 {allocation['total_weight_kg']:.2f}kg입니다. "
+            f"kg당 판매가: {draft['price_per_kg']:,}원"
         ),
     )
     return get_listing(listing_id)
@@ -795,6 +1212,33 @@ def place_order(
         order_id = int(cursor.lastrowid)
         cursor.execute(
             """
+            SELECT COUNT(*) AS count
+            FROM apple_items
+            WHERE listing_id = ? AND inventory_status = 'listed'
+            """,
+            (listing_id,),
+        )
+        listed_item_count = int(cursor.fetchone()["count"] or 0)
+        order_allocation = None
+        if listed_item_count > 0:
+            order_allocation = select_fifo_apple_items(
+                cursor,
+                listing["product_name"],
+                listing["size_class"],
+                listing["grade"],
+                float(quantity_kg),
+                "listed",
+                listing_id=listing_id,
+            )
+            update_apple_item_status(
+                cursor,
+                order_allocation["item_ids"],
+                "sold",
+                listing_id=listing_id,
+                order_id=order_id,
+            )
+        cursor.execute(
+            """
             UPDATE sales_listings
             SET quantity_kg = ?, status = ?
             WHERE id = ?
@@ -813,6 +1257,12 @@ def place_order(
                     f"{customer_name} 고객이 {listing['product_name']} {listing['size_class']}과 {listing['grade']} 등급 "
                     f"{quantity_kg}kg을 주문했습니다. 주문 금액: {total_amount:,}원, "
                     f"남은 판매수량: {remaining_quantity:,}kg"
+                    + (
+                        f", FIFO 출고 묶음: {order_allocation['item_count']:,}개 "
+                        f"{order_allocation['total_weight_kg']:.2f}kg"
+                        if order_allocation
+                        else ""
+                    )
                 ),
             ),
         )

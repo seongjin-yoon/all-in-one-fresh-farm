@@ -165,3 +165,24 @@ CREATE TABLE IF NOT EXISTS harvest_events (
     INDEX idx_harvest_events_created_at (created_at),
     INDEX idx_harvest_events_product_grade (product_name, size_class, quality_grade)
 );
+
+CREATE TABLE IF NOT EXISTS apple_items (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_name VARCHAR(128) NOT NULL DEFAULT '사과',
+    size_class VARCHAR(32) NOT NULL,
+    quality_grade VARCHAR(32) NOT NULL,
+    estimated_weight_kg DECIMAL(8, 3) NOT NULL,
+    inventory_status ENUM('available', 'reserved', 'listed', 'sold', 'discarded')
+        NOT NULL DEFAULT 'available',
+    listing_id BIGINT NULL,
+    order_id BIGINT NULL,
+    harvested_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_apple_items_product_grade_status (
+        product_name, size_class, quality_grade, inventory_status
+    ),
+    INDEX idx_apple_items_listing_status (listing_id, inventory_status),
+    INDEX idx_apple_items_order_id (order_id),
+    INDEX idx_apple_items_harvested_at (harvested_at)
+);

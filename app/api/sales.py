@@ -9,6 +9,7 @@ from app.db.sales import (
     ensure_demo_purchase_history,
     get_app_setting,
     list_drafts,
+    list_harvest_summary,
     list_listings,
     list_notifications,
     list_orders,
@@ -127,9 +128,24 @@ class ShopSettingsRequest(BaseModel):
     shop_page_title: str = Field(..., min_length=1, max_length=80)
 
 
+class HarvestSummary(BaseModel):
+    product_name: str
+    size_class: str
+    quality_grade: str
+    item_count: int
+    total_weight_kg: float
+    oldest_harvested_at: datetime
+    latest_harvested_at: datetime
+
+
 @router.get("/products", response_model=list[ProductInventory])
 def products() -> list[ProductInventory]:
     return [ProductInventory(**product) for product in list_products()]
+
+
+@router.get("/harvest-summary", response_model=list[HarvestSummary])
+def harvest_summary() -> list[HarvestSummary]:
+    return [HarvestSummary(**summary) for summary in list_harvest_summary()]
 
 
 @router.get("/drafts", response_model=list[SalesDraft])
