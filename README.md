@@ -19,15 +19,23 @@
 ### 과일 수확부터 판매까지, AI 한 번에 처리합니다.
 선별 · 재고 · 시세 예측 · 등록 · 주문 관리를 하나의 흐름으로 통합한 농장 운영 MVP
 
+<p>
+  <a href="./docs/Harvest_To_Sale.pdf">
+    <img src="https://img.shields.io/badge/📑_발표자료-PDF_다운로드-2E7D32?style=for-the-badge" />
+  </a>
+</p>
+
 </div>
 
 <br>
 
-```
-🤖 수확/선별 로봇 → FastAPI → MariaDB ⇄ RAG/LLM
-                                  ├─ 📊 관리자 대시보드
-                                  └─ 🛒 Fresh Farm Market (고객용)
-```
+<div align="center">
+<img src="./assets/architecture.png" width="80%" />
+<br>
+<sub>RAG · LLM · 로봇 데이터가 FastAPI를 거쳐 대시보드와 쇼핑몰로 흐르는 전체 아키텍처</sub>
+</div>
+
+<br>
 
 운영자는 **대시보드**에서 재고·주문을 확인하고 AI 도우미로 판매 등록과 운영 질문을 처리합니다. 고객은 별도의 **Fresh Farm Market** 페이지에서 상품을 보고 주문합니다.
 
@@ -67,6 +75,12 @@
 📊 Chronos mini 기반 사과 시세 예측
 🛒 Streamlit 관리자 대시보드 + Apple Market 쇼핑몰
 ```
+
+<div align="center">
+<img src="./assets/admin_dashboard.png" width="70%" />
+<br>
+<sub>AI 도우미 · 재고 요약 · 판매중 상품을 한 화면에서 관리하는 Manage Apple Pro</sub>
+</div>
 
 <br>
 
@@ -259,6 +273,21 @@ app/api/news.py
 ## 🤖 로봇 연동 방향
 
 터틀봇이나 로봇팔이 수확/선별 결과를 FastAPI로 전달하면 DB 재고에 반영할 수 있습니다.
+
+<div align="center">
+<table>
+<tr>
+<td width="33%"><img src="./assets/robot_arm.png" /></td>
+<td width="33%"><img src="./assets/quality_check.png" /></td>
+<td width="33%"><img src="./assets/sort_detection.png" /></td>
+</tr>
+<tr>
+<td align="center"><sub>로봇팔 수확 동작</sub></td>
+<td align="center"><sub>품질 판정 (fresh/damage)</sub></td>
+<td align="center"><sub>등급 분류 후 SORT</sub></td>
+</tr>
+</table>
+</div>
 
 ```json
 {
